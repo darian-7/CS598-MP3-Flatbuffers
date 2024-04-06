@@ -1,2 +1,50 @@
-// Schema for dataframe encoding.
-// Your code here...
+// Flatbuffers schema for serializing Pandas Dataframes.
+
+namespace Project.Dataframe;
+
+// Enum to represent the data type of each column.
+enum DataType: byte {
+  Int64 = 0,
+  Float,
+  String
+}
+
+// Column metadata includes the name of the column and the type of data it holds.
+table ColumnMetadata {
+  name: string;
+  type: DataType;
+}
+
+// A union to represent different column data types.
+union ColumnData {
+  Int64Column,
+  FloatColumn,
+  StringColumn
+}
+
+// Each column type table holds an array of values.
+table Int64Column {
+  values: [long];
+}
+
+table FloatColumn {
+  values: [float];
+}
+
+table StringColumn {
+  values: [string];
+}
+
+// A table to hold the column data union.
+table ColumnDataHolder {
+  data: ColumnData;
+}
+
+// The main Dataframe table consists of column metadata and the data itself.
+table Dataframe {
+  columns: [ColumnMetadata];
+  data: [ColumnDataHolder];  // Use the holder table instead of a direct union vector.
+}
+
+// Specify the root type of the schema.
+root_type Dataframe;
