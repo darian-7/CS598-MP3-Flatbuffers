@@ -31,18 +31,14 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
     columns_metadata_offsets = []
     column_data_offsets = []
 
-    # Iterate over the columns in a specified order to ensure 'int_col' is processed first
-    ordered_columns = ['int_col', 'float_col'] + [col for col in df.columns if col not in ['int_col', 'float_col']]
-
-    for column_name in ordered_columns:
+    for column_name in df.columns:  # Directly use the order of columns in the DataFrame
         data = df[column_name]
         name_offset = builder.CreateString(column_name)
 
         if data.dtype == 'int64':
             data_type = DataType.Int64
-            # Start the vector for int64 values
             builder.StartVector(8, len(data), 8)
-            for val in reversed(data):
+            for val in reversed(data.to_numpy()):
                 builder.PrependInt64(val)
             values_vector_offset = builder.EndVector(len(data))
             Int64Column.Start(builder)
@@ -50,19 +46,17 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
             data_offset = Int64Column.End(builder)
         elif data.dtype == 'float':
             data_type = DataType.Float
-            # Start the vector for float values
             builder.StartVector(8, len(data), 8)
-            for val in reversed(data):
+            for val in reversed(data.to_numpy()):
                 builder.PrependFloat64(val)
             values_vector_offset = builder.EndVector(len(data))
             FloatColumn.Start(builder)
             FloatColumn.AddValues(builder, values_vector_offset)
             data_offset = FloatColumn.End(builder)
-        elif data.dtype == 'object':
+        elif data.dtype == 'object':  # Assuming object dtype for strings
             data_type = DataType.String
-            # Create a vector of string values
             strings_offsets = [builder.CreateString(str(value)) for value in data]
-            builder.StartVector(4, len(strings_offsets), 4)  # Assuming string offsets are 4 bytes
+            builder.StartVector(4, len(strings_offsets), 4)
             for offset in reversed(strings_offsets):
                 builder.PrependUOffsetTRelative(offset)
             values_vector_offset = builder.EndVector(len(strings_offsets))
