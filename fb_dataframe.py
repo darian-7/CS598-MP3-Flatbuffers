@@ -3,9 +3,10 @@ import pandas as pd
 import struct
 import time
 import types
-from Project.Dataframe import Dataframe, ColumnMetadata, Int64Column, FloatColumn, StringColumn, DataType, ColumnData
 
 # Your Flatbuffer imports here (i.e. the files generated from running ./flatc with your Flatbuffer definition)...
+from Project.Dataframe import Dataframe, ColumnMetadata, Int64Column, FloatColumn, StringColumn, DataType, ColumnDataHolder
+
 
 def to_flatbuffer(df: pd.DataFrame) -> bytes:
     """
@@ -25,61 +26,65 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
     """
     builder = flatbuffers.Builder(1024)
 
-    # Serialize each column's data and metadata
     columns_data_offsets = []
     columns_metadata_offsets = []
-    for column_name, data in df.iteritems():
-        # Create column metadata
+    for column_name, data in df.items():  # Changed from iteritems() to items()
         name_offset = builder.CreateString(column_name)
+
         if data.dtype == 'int64':
             data_type = DataType.Int64
             values_offset = Int64Column.CreateValuesVector(builder, data.to_numpy())
-            Int64Column.Int64ColumnStart(builder)
-            Int64Column.Int64ColumnAddValues(builder, values_offset)
-            data_offset = Int64Column.Int64ColumnEnd(builder)
+            Int64Column.Start(builder)
+            Int64Column.AddValues(builder, values_offset)
+            data_offset = Int64Column.End(builder)
         elif data.dtype == 'float':
             data_type = DataType.Float
             values_offset = FloatColumn.CreateValuesVector(builder, data.to_numpy())
-            FloatColumn.FloatColumnStart(builder)
-            FloatColumn.FloatColumnAddValues(builder, values_offset)
-            data_offset = FloatColumn.FloatColumnEnd(builder)
+            FloatColumn.Start(builder)
+            FloatColumn.AddValues(builder, values_offset)
+            data_offset = FloatColumn.End(builder)
         elif data.dtype == 'object':
             data_type = DataType.String
             strings_offsets = [builder.CreateString(str(value)) for value in data]
-            StringColumn.StringColumnStartValuesVector(builder, len(strings_offsets))
+            StringColumn.StartValuesVector(builder, len(strings_offsets))
             for offset in reversed(strings_offsets):
                 builder.PrependUOffsetTRelative(offset)
             values_offset = builder.EndVector(len(strings_offsets))
-            StringColumn.StringColumnStart(builder)
-            StringColumn.StringColumnAddValues(builder, values_offset)
-            data_offset = StringColumn.StringColumnEnd(builder)
+            StringColumn.Start(builder)
+            StringColumn.AddValues(builder, values_offset)
+            data_offset = StringColumn.End(builder)
         else:
             continue  # Skip unsupported data types
 
-        ColumnMetadata.ColumnMetadataStart(builder)
-        ColumnMetadata.ColumnMetadataAddName(builder, name_offset)
-        ColumnMetadata.ColumnMetadataAddType(builder, data_type)
-        metadata_offset = ColumnMetadata.ColumnMetadataEnd(builder)
+        ColumnMetadata.Start(builder)
+        ColumnMetadata.AddName(builder, name_offset)
+        ColumnMetadata.AddType(builder, data_type)
+        metadata_offset = ColumnMetadata.End(builder)
+
+        # Create a holder for the data to conform to the modified schema
+        ColumnDataHolder.Start(builder)
+        ColumnDataHolder.AddData(builder, data_offset)
+        data_holder_offset = ColumnDataHolder.End(builder)
 
         columns_metadata_offsets.append(metadata_offset)
-        columns_data_offsets.append(data_offset)
+        columns_data_offsets.append(data_holder_offset)
 
     # Create vectors for the metadata and data
-    Dataframe.DataframeStartColumnsVector(builder, len(columns_metadata_offsets))
+    Dataframe.StartColumnsVector(builder, len(columns_metadata_offsets))
     for offset in reversed(columns_metadata_offsets):
         builder.PrependUOffsetTRelative(offset)
     columns_metadata_vector = builder.EndVector(len(columns_metadata_offsets))
 
-    Dataframe.DataframeStartDataVector(builder, len(columns_data_offsets))
+    Dataframe.StartDataVector(builder, len(columns_data_offsets))
     for offset in reversed(columns_data_offsets):
         builder.PrependUOffsetTRelative(offset)
     columns_data_vector = builder.EndVector(len(columns_data_offsets))
 
     # Create the main Dataframe object
-    Dataframe.DataframeStart(builder)
-    Dataframe.DataframeAddColumns(builder, columns_metadata_vector)
-    Dataframe.DataframeAddData(builder, columns_data_vector)
-    dataframe_offset = Dataframe.DataframeEnd(builder)
+    Dataframe.Start(builder)
+    Dataframe.AddColumns(builder, columns_metadata_vector)
+    Dataframe.AddData(builder, columns_data_vector)
+    dataframe_offset = Dataframe.End(builder)
 
     builder.Finish(dataframe_offset)
     return builder.Output()
