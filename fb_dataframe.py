@@ -28,45 +28,60 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
     """
     builder = flatbuffers.Builder(1024)
 
-    # Keep track of the order of the columns to ensure 'int_col' comes before 'float_col'
-    ordered_columns = ['int_col', 'float_col'] + [col for col in df.columns if col not in ['int_col', 'float_col']]
-    
-    columns_data_offsets = []
     columns_metadata_offsets = []
-    for column_name in ordered_columns:
+    columns_data_offsets = []
+    for column_name in df.columns:
         data = df[column_name]
         name_offset = builder.CreateString(column_name)
 
         if data.dtype == 'int64':
             data_type = DataType.Int64
+            # Manually create a vector of int64 values
+            Int64Column.StartValuesVector(builder, len(data))
+            for val in reversed(data):
+                builder.PrependInt64(val)
+            values_vector_offset = builder.EndVector(len(data))
             Int64Column.Start(builder)
-            Int64Column.AddValues(builder, builder.CreateNumpyVector(data.to_numpy().astype(np.int64)))
+            Int64Column.AddValues(builder, values_vector_offset)
             data_offset = Int64Column.End(builder)
         elif data.dtype == 'float':
             data_type = DataType.Float
+            # Manually create a vector of float values
+            FloatColumn.StartValuesVector(builder, len(data))
+            for val in reversed(data):
+                builder.PrependFloat64(val)
+            values_vector_offset = builder.EndVector(len(data))
             FloatColumn.Start(builder)
-            FloatColumn.AddValues(builder, builder.CreateNumpyVector(data.to_numpy().astype(np.float64)))
+            FloatColumn.AddValues(builder, values_vector_offset)
             data_offset = FloatColumn.End(builder)
-        elif data.dtype == 'object':  # assuming 'object' dtype is for strings
+        elif data.dtype == 'object':  # Object usually means strings in pandas
             data_type = DataType.String
+            # Create a vector of string values
             strings_offsets = [builder.CreateString(str(value)) for value in data]
+            StringColumn.StartValuesVector(builder, len(strings_offsets))
+            for offset in reversed(strings_offsets):
+                builder.PrependUOffsetTRelative(offset)
+            values_vector_offset = builder.EndVector(len(strings_offsets))
             StringColumn.Start(builder)
-            StringColumn.AddValues(builder, builder.CreateVector(strings_offsets))
+            StringColumn.AddValues(builder, values_vector_offset)
             data_offset = StringColumn.End(builder)
         else:
-            continue  # Skip unsupported data types
+            # If the dtype of data is not recognized, skip the column
+            continue
 
+        # Metadata for the column
         ColumnMetadata.Start(builder)
         ColumnMetadata.AddName(builder, name_offset)
         ColumnMetadata.AddType(builder, data_type)
         metadata_offset = ColumnMetadata.End(builder)
 
+        # Wrap the column data in a ColumnDataHolder
         ColumnDataHolder.Start(builder)
         ColumnDataHolder.AddData(builder, data_offset)
-        data_holder_offset = ColumnDataHolder.End(builder)
+        column_data_holder_offset = ColumnDataHolder.End(builder)
 
         columns_metadata_offsets.append(metadata_offset)
-        columns_data_offsets.append(data_holder_offset)
+        columns_data_offsets.append(column_data_holder_offset)
 
     # Create vectors for the metadata and data
     Dataframe.StartColumnsVector(builder, len(columns_metadata_offsets))
