@@ -6,6 +6,7 @@ import types
 
 # Your Flatbuffer imports here (i.e. the files generated from running ./flatc with your Flatbuffer definition)...
 from Project.Dataframe import Dataframe, ColumnMetadata, Int64Column, FloatColumn, StringColumn, DataType, ColumnDataHolder
+from Project.Dataframe.DataType import DataType
 
 
 def to_flatbuffer(df: pd.DataFrame) -> bytes:
