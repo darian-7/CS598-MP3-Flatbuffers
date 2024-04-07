@@ -28,11 +28,11 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
 
     columns_data_offsets = []
     columns_metadata_offsets = []
-    for column_name, data in df.items():  # Changed from iteritems() to items()
+    for column_name, data in df.items():  
         name_offset = builder.CreateString(column_name)
 
         if data.dtype == 'int64':
-            data_type = DataType.Int64  # Adjusted access to the enum
+            data_type = DataType.Int64  
             values_offset = Int64Column.CreateValuesVector(builder, data.to_numpy())
             Int64Column.Start(builder)
             Int64Column.AddValues(builder, values_offset)
