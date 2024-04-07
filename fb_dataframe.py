@@ -1,14 +1,12 @@
 import flatbuffers
 import pandas as pd
-
-
 import struct
 import time
 import types
 
 # Your Flatbuffer imports here (i.e. the files generated from running ./flatc with your Flatbuffer definition)...
-from Project.Dataframe import Dataframe, ColumnMetadata, Int64Column, FloatColumn, StringColumn, ColumnDataHolder
-from Project.Dataframe.DataType import DataType  # Importing DataType
+from Project.Dataframe import Dataframe, ColumnMetadata, Int64Column, FloatColumn, StringColumn, DataType, ColumnDataHolder
+
 
 def to_flatbuffer(df: pd.DataFrame) -> bytes:
     """
@@ -28,69 +26,59 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
     """
     builder = flatbuffers.Builder(1024)
 
-    # Lists to hold offsets for the column metadata and actual column data
+    columns_data_offsets = []
     columns_metadata_offsets = []
-    column_data_offsets = []
-
-    # Serialize 'int_col' and 'float_col' columns first to maintain order
-    for column_name in ['int_col', 'float_col']:
-        data = df[column_name]
+    for column_name, data in df.items():  # Changed from iteritems() to items()
         name_offset = builder.CreateString(column_name)
 
         if data.dtype == 'int64':
-            data_type = DataType.Int64
-            # Start the vector for int64 values
-            builder.StartVector(8, len(data), 8)  # Alignment of 8 bytes for int64
-            for val in reversed(data.tolist()):  # Reversed to maintain Flatbuffers' order
-                builder.PrependInt64(val)
-            values_offset = builder.EndVector(len(data))
-
-            # Create the Int64Column with the values offset
+            data_type = DataType().Int64  # Adjusted access to the enum
+            values_offset = Int64Column.CreateValuesVector(builder, data.to_numpy())
             Int64Column.Start(builder)
             Int64Column.AddValues(builder, values_offset)
             data_offset = Int64Column.End(builder)
-
         elif data.dtype == 'float':
             data_type = DataType.Float
-            # Start the vector for float values
-            builder.StartVector(8, len(data), 8)  # Alignment of 8 bytes for float64
-            for val in reversed(data.tolist()):  # Reversed to maintain Flatbuffers' order
-                builder.PrependFloat64(val)
-            values_offset = builder.EndVector(len(data))
-
-            # Create the FloatColumn with the values offset
+            values_offset = FloatColumn.CreateValuesVector(builder, data.to_numpy())
             FloatColumn.Start(builder)
             FloatColumn.AddValues(builder, values_offset)
             data_offset = FloatColumn.End(builder)
+        elif data.dtype == 'object':
+            data_type = DataType.String
+            strings_offsets = [builder.CreateString(str(value)) for value in data]
+            StringColumn.StartValuesVector(builder, len(strings_offsets))
+            for offset in reversed(strings_offsets):
+                builder.PrependUOffsetTRelative(offset)
+            values_offset = builder.EndVector(len(strings_offsets))
+            StringColumn.Start(builder)
+            StringColumn.AddValues(builder, values_offset)
+            data_offset = StringColumn.End(builder)
+        else:
+            continue  # Skip unsupported data types
 
-        # Metadata for the column
         ColumnMetadata.Start(builder)
         ColumnMetadata.AddName(builder, name_offset)
         ColumnMetadata.AddType(builder, data_type)
         metadata_offset = ColumnMetadata.End(builder)
 
-        # Wrap the column data in a ColumnDataHolder
+        # Create a holder for the data to conform to the modified schema
         ColumnDataHolder.Start(builder)
         ColumnDataHolder.AddData(builder, data_offset)
-        column_data_holder_offset = ColumnDataHolder.End(builder)
+        data_holder_offset = ColumnDataHolder.End(builder)
 
-        # Append the offsets to the lists
         columns_metadata_offsets.append(metadata_offset)
-        column_data_offsets.append(column_data_holder_offset)
-
-    # Repeat the above serialization process for other columns in the dataframe
-    # ...
+        columns_data_offsets.append(data_holder_offset)
 
     # Create vectors for the metadata and data
     Dataframe.StartColumnsVector(builder, len(columns_metadata_offsets))
-    for metadata_offset in reversed(columns_metadata_offsets):
-        builder.PrependUOffsetTRelative(metadata_offset)
+    for offset in reversed(columns_metadata_offsets):
+        builder.PrependUOffsetTRelative(offset)
     columns_metadata_vector = builder.EndVector(len(columns_metadata_offsets))
 
-    Dataframe.StartDataVector(builder, len(column_data_offsets))
-    for data_holder_offset in reversed(column_data_offsets):
-        builder.PrependUOffsetTRelative(data_holder_offset)
-    columns_data_vector = builder.EndVector(len(column_data_offsets))
+    Dataframe.StartDataVector(builder, len(columns_data_offsets))
+    for offset in reversed(columns_data_offsets):
+        builder.PrependUOffsetTRelative(offset)
+    columns_data_vector = builder.EndVector(len(columns_data_offsets))
 
     # Create the main Dataframe object
     Dataframe.Start(builder)
@@ -99,7 +87,7 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
     dataframe_offset = Dataframe.End(builder)
 
     builder.Finish(dataframe_offset)
-    return bytes(builder.Output())
+    return builder.Output()
 
 
 def fb_dataframe_head(fb_bytes: bytes, rows: int = 5) -> pd.DataFrame:
