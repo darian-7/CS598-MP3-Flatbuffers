@@ -29,18 +29,28 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
 
     columns_data_offsets = []
     columns_metadata_offsets = []
-    for column_name, data in df.items():  
+    for column_name, data in df.items():
         name_offset = builder.CreateString(column_name)
 
         if data.dtype == 'int64':
-            data_type = DataType.Int64  
-            values_offset = Int64Column.CreateValuesVector(builder, data.to_numpy())
+            data_type = DataType.Int64
+            # Start the vector for int64 values
+            builder.StartVector(8, len(data), 8)
+            for val in reversed(data.tolist()):
+                builder.PrependInt64(val)
+            values_offset = builder.EndVector(len(data))
+            # Create the Int64Column
             Int64Column.Start(builder)
             Int64Column.AddValues(builder, values_offset)
             data_offset = Int64Column.End(builder)
         elif data.dtype == 'float':
             data_type = DataType.Float
-            values_offset = FloatColumn.CreateValuesVector(builder, data.to_numpy())
+            # Start the vector for float values
+            builder.StartVector(8, len(data), 8)
+            for val in reversed(data.tolist()):
+                builder.PrependFloat64(val)
+            values_offset = builder.EndVector(len(data))
+            # Create the FloatColumn
             FloatColumn.Start(builder)
             FloatColumn.AddValues(builder, values_offset)
             data_offset = FloatColumn.End(builder)
@@ -62,7 +72,6 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
         ColumnMetadata.AddType(builder, data_type)
         metadata_offset = ColumnMetadata.End(builder)
 
-        # Create a holder for the data to conform to the modified schema
         ColumnDataHolder.Start(builder)
         ColumnDataHolder.AddData(builder, data_offset)
         data_holder_offset = ColumnDataHolder.End(builder)
