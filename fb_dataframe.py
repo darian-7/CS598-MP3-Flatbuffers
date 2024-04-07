@@ -3,6 +3,7 @@ import pandas as pd
 import struct
 import time
 import types
+import numpy as np
 
 # Your Flatbuffer imports here (i.e. the files generated from running ./flatc with your Flatbuffer definition)...
 from Project.Dataframe import Dataframe, ColumnMetadata, Int64Column, FloatColumn, StringColumn, DataType, ColumnDataHolder
@@ -27,42 +28,30 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
     """
     builder = flatbuffers.Builder(1024)
 
+    # Keep track of the order of the columns to ensure 'int_col' comes before 'float_col'
+    ordered_columns = ['int_col', 'float_col'] + [col for col in df.columns if col not in ['int_col', 'float_col']]
+    
     columns_data_offsets = []
     columns_metadata_offsets = []
-    for column_name, data in df.items():
+    for column_name in ordered_columns:
+        data = df[column_name]
         name_offset = builder.CreateString(column_name)
 
         if data.dtype == 'int64':
             data_type = DataType.Int64
-            # Start the vector for int64 values
-            builder.StartVector(8, len(data), 8)
-            for val in reversed(data.tolist()):
-                builder.PrependInt64(val)
-            values_offset = builder.EndVector(len(data))
-            # Create the Int64Column
             Int64Column.Start(builder)
-            Int64Column.AddValues(builder, values_offset)
+            Int64Column.AddValues(builder, builder.CreateNumpyVector(data.to_numpy().astype(np.int64)))
             data_offset = Int64Column.End(builder)
         elif data.dtype == 'float':
             data_type = DataType.Float
-            # Start the vector for float values
-            builder.StartVector(8, len(data), 8)
-            for val in reversed(data.tolist()):
-                builder.PrependFloat64(val)
-            values_offset = builder.EndVector(len(data))
-            # Create the FloatColumn
             FloatColumn.Start(builder)
-            FloatColumn.AddValues(builder, values_offset)
+            FloatColumn.AddValues(builder, builder.CreateNumpyVector(data.to_numpy().astype(np.float64)))
             data_offset = FloatColumn.End(builder)
-        elif data.dtype == 'object':
+        elif data.dtype == 'object':  # assuming 'object' dtype is for strings
             data_type = DataType.String
             strings_offsets = [builder.CreateString(str(value)) for value in data]
-            StringColumn.StartValuesVector(builder, len(strings_offsets))
-            for offset in reversed(strings_offsets):
-                builder.PrependUOffsetTRelative(offset)
-            values_offset = builder.EndVector(len(strings_offsets))
             StringColumn.Start(builder)
-            StringColumn.AddValues(builder, values_offset)
+            StringColumn.AddValues(builder, builder.CreateVector(strings_offsets))
             data_offset = StringColumn.End(builder)
         else:
             continue  # Skip unsupported data types
@@ -97,7 +86,7 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
     dataframe_offset = Dataframe.End(builder)
 
     builder.Finish(dataframe_offset)
-    return builder.Output()
+    return bytes(builder.Output())
 
 
 def fb_dataframe_head(fb_bytes: bytes, rows: int = 5) -> pd.DataFrame:
