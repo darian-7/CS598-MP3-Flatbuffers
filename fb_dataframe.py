@@ -1,12 +1,14 @@
 import flatbuffers
 import pandas as pd
+
+
 import struct
 import time
 import types
 
 # Your Flatbuffer imports here (i.e. the files generated from running ./flatc with your Flatbuffer definition)...
-from Project.Dataframe import Dataframe, ColumnMetadata, Int64Column, FloatColumn, StringColumn, DataType, ColumnDataHolder
-
+from Project.Dataframe import Dataframe, ColumnMetadata, Int64Column, FloatColumn, StringColumn, ColumnDataHolder
+from Project.Dataframe.DataType import DataType  # Importing DataType
 
 def to_flatbuffer(df: pd.DataFrame) -> bytes:
     """
@@ -28,12 +30,12 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
 
     columns_data_offsets = []
     columns_metadata_offsets = []
-    for column_name, data in df.items():  # Changed from iteritems() to items()
+    for column_name, data in df.items():
         name_offset = builder.CreateString(column_name)
 
+        # Directly using the DataType enum attributes without instantiating DataType
         if data.dtype == 'int64':
-            data_type = DataType().Int64  # Adjusted access to the enum
-
+            data_type = DataType.Int64
             values_offset = Int64Column.CreateValuesVector(builder, data.to_numpy())
             Int64Column.Start(builder)
             Int64Column.AddValues(builder, values_offset)
@@ -62,7 +64,6 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
         ColumnMetadata.AddType(builder, data_type)
         metadata_offset = ColumnMetadata.End(builder)
 
-        # Create a holder for the data to conform to the modified schema
         ColumnDataHolder.Start(builder)
         ColumnDataHolder.AddData(builder, data_offset)
         data_holder_offset = ColumnDataHolder.End(builder)
