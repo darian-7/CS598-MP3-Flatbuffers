@@ -6,8 +6,10 @@ import types
 import numpy as np
 
 # Your Flatbuffer imports here (i.e. the files generated from running ./flatc with your Flatbuffer definition)...
-from Project.Dataframe import Dataframe, ColumnMetadata, Int64Column, FloatColumn, StringColumn, DataType, ColumnDataHolder
-from Project.Dataframe.DataType import DataType
+# from Project.Dataframe import Dataframe, ColumnMetadata, Int64Column, FloatColumn, StringColumn, DataType, ColumnDataHolder
+# from Project.Dataframe.DataType import DataType
+
+from Project.Dataframe import MyDataframe
 
 
 def to_flatbuffer(df: pd.DataFrame) -> bytes:
@@ -100,80 +102,69 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
 
     builder = flatbuffers.Builder(1024)
 
-    # Prepare metadata and data vectors
-    column_metadata_offsets = []
-    data_vectors = []
-
-    for col_name, col_data in df.items():
-        # Create column metadata
-        name_offset = builder.CreateString(col_name)
-        dtype = col_data.dtype
+    # Serialize columns and collect their metadata
+    column_metadata = []
+    column_data = []
+    for col_name, dtype in df.dtypes.iteritems():
+        name = builder.CreateString(col_name)
         if dtype == 'int64':
-            data_type = DataType.Int64
-            values_vector = [val for val in col_data]
-            # Start the vector for int64 values
-            Int64Column.Int64ColumnStartValuesVector(builder, len(values_vector))
-            # Reverse append the values to keep order after EndVector call
-            for val in reversed(values_vector):
-                builder.PrependInt64(val)
-            int_values = builder.EndVector(len(values_vector))
-            # Create the Int64Column object
-            Int64Column.Int64ColumnStart(builder)
-            Int64Column.Int64ColumnAddValues(builder, int_values)
-            data_vectors.append(Int64Column.Int64ColumnEnd(builder))
-        elif dtype == 'float64':
-            data_type = DataType.Float
-            values_vector = [val for val in col_data]
-            # Start the vector for float64 values
-            FloatColumn.FloatColumnStartValuesVector(builder, len(values_vector))
-            # Reverse append the values to keep order after EndVector call
-            for val in reversed(values_vector):
-                builder.PrependFloat64(val)
-            float_values = builder.EndVector(len(values_vector))
-            # Create the FloatColumn object
-            FloatColumn.FloatColumnStart(builder)
-            FloatColumn.FloatColumnAddValues(builder, float_values)
-            data_vectors.append(FloatColumn.FloatColumnEnd(builder))
+            MyDataframe.Int64ColumnStartValuesVector(builder, len(df[col_name]))
+            for value in df[col_name][::-1]:  # FlatBuffers builds arrays backwards
+                builder.PrependInt64(value)
+            values = builder.EndVector(len(df[col_name]))
+            MyDataframe.Int64ColumnStart(builder)
+            MyDataframe.Int64ColumnAddValues(builder, values)
+            column = MyDataframe.Int64ColumnEnd(builder)
+            column_type = MyDataframe.DataType.Int64
+        elif dtype == 'float':
+            MyDataframe.FloatColumnStartValuesVector(builder, len(df[col_name]))
+            for value in df[col_name][::-1]:
+                builder.PrependFloat64(value)
+            values = builder.EndVector(len(df[col_name]))
+            MyDataframe.FloatColumnStart(builder)
+            MyDataframe.FloatColumnAddValues(builder, values)
+            column = MyDataframe.FloatColumnEnd(builder)
+            column_type = MyDataframe.DataType.Float
+        elif dtype == 'object':
+            strings = [builder.CreateString(str(value)) for value in df[col_name]]
+            MyDataframe.StringColumnStartValuesVector(builder, len(df[col_name]))
+            for s in strings[::-1]:
+                builder.PrependUOffsetTRelative(s)
+            values = builder.EndVector(len(df[col_name]))
+            MyDataframe.StringColumnStart(builder)
+            MyDataframe.StringColumnAddValues(builder, values)
+            column = MyDataframe.StringColumnEnd(builder)
+            column_type = MyDataframe.DataType.String
         else:
-            data_type = DataType.String
-            # Create the vector for string values
-            strings_offsets = [builder.CreateString(str(val)) for val in col_data]
-            # Start the vector for string values
-            StringColumn.StringColumnStartValuesVector(builder, len(strings_offsets))
-            # Reverse append the values to keep order after EndVector call
-            for offset in reversed(strings_offsets):
-                builder.PrependUOffsetTRelative(offset)
-            string_values = builder.EndVector(len(strings_offsets))
-            # Create the StringColumn object
-            StringColumn.StringColumnStart(builder)
-            StringColumn.StringColumnAddValues(builder, string_values)
-            data_vectors.append(StringColumn.StringColumnEnd(builder))
+            raise ValueError(f"Unsupported dtype: {dtype}")
 
-        # Add metadata
-        ColumnMetadata.ColumnMetadataStart(builder)
-        ColumnMetadata.ColumnMetadataAddName(builder, name_offset)
-        ColumnMetadata.ColumnMetadataAddType(builder, data_type)
-        column_metadata_offsets.append(ColumnMetadata.ColumnMetadataEnd(builder))
+        MyDataframe.ColumnMetadataStart(builder)
+        MyDataframe.ColumnMetadataAddName(builder, name)
+        MyDataframe.ColumnMetadataAddType(builder, column_type)
+        metadata = MyDataframe.ColumnMetadataEnd(builder)
 
-    # Start the Dataframe object
-    Dataframe.DataframeStartColumnsVector(builder, len(column_metadata_offsets))
-    for offset in reversed(column_metadata_offsets):
-        builder.PrependUOffsetTRelative(offset)
-    columns_vector = builder.EndVector(len(column_metadata_offsets))
+        column_metadata.append(metadata)
+        column_data.append(column)
 
-    Dataframe.DataframeStartDataVector(builder, len(data_vectors))
-    for data_vector in reversed(data_vectors):
-        builder.PrependUOffsetTRelative(data_vector)
-    data_vector = builder.EndVector(len(data_vectors))
+    # Create vectors for column metadata and data
+    MyDataframe.DataframeStartColumnsVector(builder, len(column_metadata))
+    for m in column_metadata[::-1]:
+        builder.PrependUOffsetTRelative(m)
+    columns = builder.EndVector(len(column_metadata))
 
-    # Finish the Dataframe object
-    Dataframe.DataframeStart(builder)
-    Dataframe.DataframeAddColumns(builder, columns_vector)
-    Dataframe.DataframeAddData(builder, data_vector)
-    dataframe = Dataframe.DataframeEnd(builder)
+    MyDataframe.DataframeStartDataVector(builder, len(column_data))
+    for d in column_data[::-1]:
+        builder.PrependUOffsetTRelative(d)
+    data = builder.EndVector(len(column_data))
+
+    # Create the Dataframe
+    MyDataframe.DataframeStart(builder)
+    MyDataframe.DataframeAddColumns(builder, columns)
+    MyDataframe.DataframeAddData(builder, data)
+    dataframe = MyDataframe.DataframeEnd(builder)
 
     builder.Finish(dataframe)
-    return bytes(builder.Output())
+    return builder.Output()
 
 
 def fb_dataframe_head(fb_bytes: bytes, rows: int = 5) -> pd.DataFrame:
