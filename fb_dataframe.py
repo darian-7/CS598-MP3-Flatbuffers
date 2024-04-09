@@ -9,7 +9,7 @@ import numpy as np
 # from Project.Dataframe import Dataframe, ColumnMetadata, Int64Column, FloatColumn, StringColumn, DataType, ColumnDataHolder
 # from Project.Dataframe.DataType import DataType
 
-from Project.Dataframe import MyDataframe
+from Project.Dataframe import Dataframe
 
 
 def to_flatbuffer(df: pd.DataFrame) -> bytes:
@@ -108,60 +108,60 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
     for col_name, dtype in df.dtypes.iteritems():
         name = builder.CreateString(col_name)
         if dtype == 'int64':
-            MyDataframe.Int64ColumnStartValuesVector(builder, len(df[col_name]))
+            Dataframe.Int64ColumnStartValuesVector(builder, len(df[col_name]))
             for value in df[col_name][::-1]:  # FlatBuffers builds arrays backwards
                 builder.PrependInt64(value)
             values = builder.EndVector(len(df[col_name]))
-            MyDataframe.Int64ColumnStart(builder)
-            MyDataframe.Int64ColumnAddValues(builder, values)
-            column = MyDataframe.Int64ColumnEnd(builder)
-            column_type = MyDataframe.DataType.Int64
+            Dataframe.Int64ColumnStart(builder)
+            Dataframe.Int64ColumnAddValues(builder, values)
+            column = Dataframe.Int64ColumnEnd(builder)
+            column_type = Dataframe.DataType.Int64
         elif dtype == 'float':
-            MyDataframe.FloatColumnStartValuesVector(builder, len(df[col_name]))
+            Dataframe.FloatColumnStartValuesVector(builder, len(df[col_name]))
             for value in df[col_name][::-1]:
                 builder.PrependFloat64(value)
             values = builder.EndVector(len(df[col_name]))
-            MyDataframe.FloatColumnStart(builder)
-            MyDataframe.FloatColumnAddValues(builder, values)
-            column = MyDataframe.FloatColumnEnd(builder)
-            column_type = MyDataframe.DataType.Float
+            Dataframe.FloatColumnStart(builder)
+            Dataframe.FloatColumnAddValues(builder, values)
+            column = Dataframe.FloatColumnEnd(builder)
+            column_type = Dataframe.DataType.Float
         elif dtype == 'object':
             strings = [builder.CreateString(str(value)) for value in df[col_name]]
-            MyDataframe.StringColumnStartValuesVector(builder, len(df[col_name]))
+            Dataframe.StringColumnStartValuesVector(builder, len(df[col_name]))
             for s in strings[::-1]:
                 builder.PrependUOffsetTRelative(s)
             values = builder.EndVector(len(df[col_name]))
-            MyDataframe.StringColumnStart(builder)
-            MyDataframe.StringColumnAddValues(builder, values)
-            column = MyDataframe.StringColumnEnd(builder)
-            column_type = MyDataframe.DataType.String
+            Dataframe.StringColumnStart(builder)
+            Dataframe.StringColumnAddValues(builder, values)
+            column = Dataframe.StringColumnEnd(builder)
+            column_type = Dataframe.DataType.String
         else:
             raise ValueError(f"Unsupported dtype: {dtype}")
 
-        MyDataframe.ColumnMetadataStart(builder)
-        MyDataframe.ColumnMetadataAddName(builder, name)
-        MyDataframe.ColumnMetadataAddType(builder, column_type)
-        metadata = MyDataframe.ColumnMetadataEnd(builder)
+        Dataframe.ColumnMetadataStart(builder)
+        Dataframe.ColumnMetadataAddName(builder, name)
+        Dataframe.ColumnMetadataAddType(builder, column_type)
+        metadata = Dataframe.ColumnMetadataEnd(builder)
 
         column_metadata.append(metadata)
         column_data.append(column)
 
     # Create vectors for column metadata and data
-    MyDataframe.DataframeStartColumnsVector(builder, len(column_metadata))
+    Dataframe.DataframeStartColumnsVector(builder, len(column_metadata))
     for m in column_metadata[::-1]:
         builder.PrependUOffsetTRelative(m)
     columns = builder.EndVector(len(column_metadata))
 
-    MyDataframe.DataframeStartDataVector(builder, len(column_data))
+    Dataframe.DataframeStartDataVector(builder, len(column_data))
     for d in column_data[::-1]:
         builder.PrependUOffsetTRelative(d)
     data = builder.EndVector(len(column_data))
 
     # Create the Dataframe
-    MyDataframe.DataframeStart(builder)
-    MyDataframe.DataframeAddColumns(builder, columns)
-    MyDataframe.DataframeAddData(builder, data)
-    dataframe = MyDataframe.DataframeEnd(builder)
+    Dataframe.DataframeStart(builder)
+    Dataframe.DataframeAddColumns(builder, columns)
+    Dataframe.DataframeAddData(builder, data)
+    dataframe = Dataframe.DataframeEnd(builder)
 
     builder.Finish(dataframe)
     return builder.Output()

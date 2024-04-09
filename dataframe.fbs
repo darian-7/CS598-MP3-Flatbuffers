@@ -1,50 +1,47 @@
-// Flatbuffers schema for serializing Pandas Dataframes.
+// Define a schema for serializing Dataframes in Flatbuffers.
 
-namespace Project.Dataframe;
+namespace MyDataframe;
 
-// Enum to represent the data type of each column.
+// An enum to represent the different data types a column can have
 enum DataType: byte {
-  Int64 = 0,
+  Int64,
   Float,
   String
 }
 
-// Column metadata includes the name of the column and the type of data it holds.
-table ColumnMetadata {
-  name: string;
-  type: DataType;
-}
-
-// A union to represent different column data types.
+// A union to hold different types of column data
 union ColumnData {
   Int64Column,
   FloatColumn,
   StringColumn
 }
 
-// Each column type table holds an array of values.
+// Metadata for a column
+table ColumnMetadata {
+  name: string;
+  type: DataType;
+}
+
+// Table for int64 column data
 table Int64Column {
   values: [long];
 }
 
+// Table for float column data
 table FloatColumn {
   values: [float];
 }
 
+// Table for string column data
 table StringColumn {
   values: [string];
 }
 
-// A table to hold the column data union.
-table ColumnDataHolder {
-  data: ColumnData;
-}
-
-// The main Dataframe table consists of column metadata and the data itself.
+// The main table that represents a Dataframe
 table Dataframe {
   columns: [ColumnMetadata];
-  data: [ColumnDataHolder];  // Use the holder table instead of a direct union vector.
+  data: [ColumnData];
 }
 
-// Specify the root type of the schema.
+// The root type
 root_type Dataframe;
