@@ -105,7 +105,7 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
     # Serialize columns and collect their metadata
     column_metadata = []
     column_data = []
-    for col_name, dtype in df.dtypes.iteritems():
+    for col_name, dtype in df.dtypes.items():  # Use .items() instead of .iteritems()
         name = builder.CreateString(col_name)
         if dtype == 'int64':
             Dataframe.Int64ColumnStartValuesVector(builder, len(df[col_name]))
