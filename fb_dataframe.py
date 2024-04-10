@@ -10,6 +10,9 @@ import numpy as np
 # from Project.Dataframe.DataType import DataType
 
 from Project.Dataframe import Dataframe
+from DataFrame import Column
+from DataFrame import Metadata
+from Project.Dataframe.DataType import DataType
 
 
 def to_flatbuffer(df: pd.DataFrame) -> bytes:
@@ -28,6 +31,70 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
 
         @param df: the dataframe.
     """
+    builder = flatbuffers.Builder(1024)
+
+    # Serialize columns and collect their offsets.
+    column_offsets = []
+    for col_name, col_data in df.items():
+        # Determine the data type of the column.
+        if col_data.dtype == 'int64':
+            dtype = DataType.Int64
+            # Serialize the integer data.
+            Column.ColumnStartIntValuesVector(builder, len(col_data))
+            for value in reversed(col_data):
+                builder.PrependInt64(value)
+            values_offset = builder.EndVector(len(col_data))
+        elif col_data.dtype == 'float64':
+            dtype = DataType.Float
+            # Serialize the float data.
+            Column.ColumnStartFloatValuesVector(builder, len(col_data))
+            for value in reversed(col_data):
+                builder.PrependFloat64(value)
+            values_offset = builder.EndVector(len(col_data))
+        elif col_data.dtype == 'object':
+            dtype = DataType.String
+            # Serialize the string data.
+            string_offsets = [builder.CreateString(str(value)) for value in reversed(col_data)]
+            Column.ColumnStartStringValuesVector(builder, len(col_data))
+            for offset in string_offsets:
+                builder.PrependUOffsetTRelative(offset)
+            values_offset = builder.EndVector(len(col_data))
+        else:
+            continue  # Unsupported data type
+
+        # Serialize the column metadata.
+        Metadata.MetadataStart(builder)
+        name_offset = builder.CreateString(col_name)
+        Metadata.MetadataAddName(builder, name_offset)
+        Metadata.MetadataAddDtype(builder, dtype)
+        metadata_offset = Metadata.MetadataEnd(builder)
+
+        # Create the column.
+        Column.ColumnStart(builder)
+        Column.ColumnAddMetadata(builder, metadata_offset)
+        if dtype == DataType.Int64:
+            Column.ColumnAddIntValues(builder, values_offset)
+        elif dtype == DataType.Float:
+            Column.ColumnAddFloatValues(builder, values_offset)
+        elif dtype == DataType.String:
+            Column.ColumnAddStringValues(builder, values_offset)
+        column_offsets.append(Column.ColumnEnd(builder))
+
+    # Create a vector of columns in the DataFrame.
+    Dataframe.DataframeStartColumnsVector(builder, len(column_offsets))
+    for offset in reversed(column_offsets):
+        builder.PrependUOffsetTRelative(offset)
+    columns_offset = builder.EndVector(len(column_offsets))
+
+    # Serialize the DataFrame.
+    Dataframe.DataframeStart(builder)
+    Dataframe.DataframeAddColumns(builder, columns_offset)
+    dataframe_offset = Dataframe.DataframeEnd(builder)
+
+    builder.Finish(dataframe_offset)
+    return bytes(builder.Output())
+
+
     # builder = flatbuffers.Builder(1024)
 
     # columns_metadata_offsets = []
@@ -100,72 +167,7 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
     # builder.Finish(dataframe_offset)
     # return bytes(builder.Output())
 
-    builder = flatbuffers.Builder(1024)
-
-    columns_offsets = []
-
-    for column_name, dtype in zip(df.columns, df.dtypes):
-        # Serialize the metadata for the column
-        name_offset = builder.CreateString(column_name)
-        Dataframe.MetadataStart(builder)
-        if dtype == 'int64':
-            Dataframe.MetadataAddDtype(builder, Dataframe.ValueType().Int)
-        elif dtype == 'float64':
-            Dataframe.MetadataAddDtype(builder, Dataframe.ValueType().Float)
-        elif dtype.name == 'object':  # Pandas uses 'object' type for strings
-            Dataframe.MetadataAddDtype(builder, Dataframe.ValueType().String)
-        else:
-            raise ValueError(f"Unsupported data type: {dtype}")
-        metadata_offset = Dataframe.MetadataEnd(builder)
-
-        # Serialize the data based on its type
-        if dtype == 'int64':
-            int_values = df[column_name].values
-            Dataframe.ColumnStartIntValuesVector(builder, len(int_values))
-            for value in reversed(int_values):
-                builder.PrependInt64(value)
-            values_offset = builder.EndVector(len(int_values))
-        elif dtype == 'float64':
-            float_values = df[column_name].values
-            Dataframe.ColumnStartFloatValuesVector(builder, len(float_values))
-            for value in reversed(float_values):
-                builder.PrependFloat64(value)
-            values_offset = builder.EndVector(len(float_values))
-        elif dtype.name == 'object':
-            strings_offset = [builder.CreateString(str(value)) for value in df[column_name]]
-            Dataframe.ColumnStartStringValuesVector(builder, len(strings_offset))
-            for offset in reversed(strings_offset):
-                builder.PrependUOffsetTRelative(offset)
-            values_offset = builder.EndVector(len(strings_offset))
-
-        # Create the Column object
-        Dataframe.ColumnStart(builder)
-        Dataframe.ColumnAddMetadata(builder, metadata_offset)
-        if dtype == 'int64':
-            Dataframe.ColumnAddIntValues(builder, values_offset)
-        elif dtype == 'float64':
-            Dataframe.ColumnAddFloatValues(builder, values_offset)
-        elif dtype.name == 'object':
-            Dataframe.ColumnAddStringValues(builder, values_offset)
-        column_offset = Dataframe.ColumnEnd(builder)
-        columns_offsets.append(column_offset)
-
-    # empty string for metadata
-    df_metadata_offset = builder.CreateString("")
-
-    # Create the DataFrame object
-    Dataframe.DataFrameStartColumnsVector(builder, len(columns_offsets))
-    for offset in reversed(columns_offsets):
-        builder.PrependUOffsetTRelative(offset)
-    columns_vector_offset = builder.EndVector(len(columns_offsets))
-
-    Dataframe.DataFrameStart(builder)
-    Dataframe.DataFrameAddMetadata(builder, df_metadata_offset)
-    Dataframe.DataFrameAddColumns(builder, columns_vector_offset)
-    dataframe_offset = Dataframe.DataFrameEnd(builder)
-
-    builder.Finish(dataframe_offset)
-    return bytes(builder.Output())
+    
 
 
 def fb_dataframe_head(fb_bytes: bytes, rows: int = 5) -> pd.DataFrame:
