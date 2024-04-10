@@ -1,47 +1,32 @@
 // Define a schema for serializing Dataframes in Flatbuffers.
 
-namespace MyDataframe;
+// union not used as vector of union not possible
 
-// An enum to represent the different data types a column can have
-enum DataType: byte {
-  Int64,
+namespace DataFrame;
+
+enum ValueType: byte {
+  Int,
   Float,
   String
 }
 
-// A union to hold different types of column data
-union ColumnData {
-  Int64Column,
-  FloatColumn,
-  StringColumn
-}
-
-// Metadata for a column
-table ColumnMetadata {
+table Metadata {
   name: string;
-  type: DataType;
+  dtype: ValueType;
 }
 
-// Table for int64 column data
-table Int64Column {
-  values: [long];
+table Column {
+  metadata: Metadata;
+  int_values: [int64];
+  float_values: [float64];
+  string_values: [string];
 }
 
-// Table for float column data
-table FloatColumn {
-  values: [float];
+table DataFrame {
+  metadata: string;
+  columns: [Column];
 }
 
-// Table for string column data
-table StringColumn {
-  values: [string];
-}
+root_type DataFrame;
 
-// The main table that represents a Dataframe
-table Dataframe {
-  columns: [ColumnMetadata];
-  data: [ColumnData];
-}
 
-// The root type
-root_type Dataframe;
