@@ -33,34 +33,36 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
     """
     builder = flatbuffers.Builder(1024)
 
-    # Pre-create strings for column names to avoid nested construction.
-    name_offsets = [builder.CreateString(name) for name in df.columns]
-
+    # Serialize columns and collect their offsets.
     column_offsets = []
-    for idx, (col_name, col_data) in enumerate(df.items()):
-        name_offset = name_offsets[idx]
+    for col_name in df[df.columns[::-1]]:  # Use the order of columns as in DataFrame
+        col_data = df[col_name]
+        dtype = None
+        values_offset = None
+
+        # Create the column name string outside of any other object creation to avoid nesting.
+        name_offset = builder.CreateString(col_name)
 
         if col_data.dtype == 'int64':
             dtype = DataType.Int64
             Column.ColumnStartIntValuesVector(builder, len(col_data))
-            for value in reversed(col_data):
+            for value in col_data.iloc[::-1]:  # reverse iterate using iloc
                 builder.PrependInt64(value)
             values_offset = builder.EndVector(len(col_data))
         elif col_data.dtype == 'float64':
             dtype = DataType.Float
             Column.ColumnStartFloatValuesVector(builder, len(col_data))
-            for value in reversed(col_data):
+            for value in col_data.iloc[::-1]:  # reverse iterate using iloc
                 builder.PrependFloat64(value)
             values_offset = builder.EndVector(len(col_data))
         elif col_data.dtype == 'object':
             dtype = DataType.String
-            string_offsets = [builder.CreateString(str(value)) for value in reversed(col_data)]
+            # Pre-create strings for column values to avoid nested construction
+            string_offsets = [builder.CreateString(str(value)) for value in col_data.iloc[::-1]]
             Column.ColumnStartStringValuesVector(builder, len(col_data))
             for offset in string_offsets:
                 builder.PrependUOffsetTRelative(offset)
             values_offset = builder.EndVector(len(col_data))
-        else:
-            continue  # Skip unsupported data type
 
         Metadata.MetadataStart(builder)
         Metadata.MetadataAddName(builder, name_offset)
@@ -95,7 +97,7 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
     # columns_metadata_offsets = []
     # column_data_offsets = []
 
-    # for column_name in df.columns:  # Directly use the order of columns in the DataFrame
+    # for column_name in df[df.columns[::-1]]:  # Directly use the order of columns in the DataFrame Iterate from last column to first column
     #     data = df[column_name]
     #     name_offset = builder.CreateString(column_name)
 

@@ -174,3 +174,7 @@ def test_fb_dataframe_map_numeric_column_efficiency():
 
     # Modifying in place should be faster.
     assert fb_map_time < dill_map_time, "Your implementation should be faster than deserializing the entire dataframe with dill, performing the operation, then re-serializing."
+
+
+# if __name__ == '__main__':
+#     test_to_flatbuffer()
