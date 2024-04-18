@@ -6,14 +6,9 @@ import types
 import numpy as np
 
 # Your Flatbuffer imports here (i.e. the files generated from running ./flatc with your Flatbuffer definition)...
-# from Project.Dataframe import Dataframe, ColumnMetadata, Int64Column, FloatColumn, StringColumn, DataType, ColumnDataHolder
-# from Project.Dataframe.DataType import DataType
-
-from Project.Dataframe import Dataframe
-from DataFrame import Column
-from DataFrame import Metadata
-from Project.Dataframe.DataType import DataType
-
+from flatbuffers import Builder
+from Project.DataFrame import DataFrame, Column, Metadata, ValueType
+from Project.DataFrame.DataType import DataType
 
 def to_flatbuffer(df: pd.DataFrame) -> bytes:
     """
@@ -79,104 +74,64 @@ def to_flatbuffer(df: pd.DataFrame) -> bytes:
             Column.ColumnAddStringValues(builder, values_offset)
         column_offsets.append(Column.ColumnEnd(builder))
 
-    Dataframe.DataframeStartColumnsVector(builder, len(column_offsets))
+    DataFrame.DataFrameStartColumnsVector(builder, len(column_offsets))
     for offset in reversed(column_offsets):
         builder.PrependUOffsetTRelative(offset)
     columns_offset = builder.EndVector(len(column_offsets))
 
-    Dataframe.DataframeStart(builder)
-    Dataframe.DataframeAddColumns(builder, columns_offset)
-    dataframe_offset = Dataframe.DataframeEnd(builder)
+    DataFrame.DataFrameStart(builder)
+    DataFrame.DataFrameAddColumns(builder, columns_offset)
+    dataframe_offset = DataFrame.DataFrameEnd(builder)
 
     builder.Finish(dataframe_offset)
-    return bytes(builder.Output())
-
-
-    # builder = flatbuffers.Builder(1024)
-
-    # columns_metadata_offsets = []
-    # column_data_offsets = []
-
-    # for column_name in df[df.columns[::-1]]:  # Directly use the order of columns in the DataFrame Iterate from last column to first column
-    #     data = df[column_name]
-    #     name_offset = builder.CreateString(column_name)
-
-    #     if data.dtype == 'int64':
-    #         data_type = DataType.Int64
-    #         builder.StartVector(8, len(data), 8)
-    #         for val in reversed(data.to_numpy()):
-    #             builder.PrependInt64(val)
-    #         values_vector_offset = builder.EndVector(len(data))
-    #         Int64Column.Start(builder)
-    #         Int64Column.AddValues(builder, values_vector_offset)
-    #         data_offset = Int64Column.End(builder)
-    #     elif data.dtype == 'float':
-    #         data_type = DataType.Float
-    #         builder.StartVector(8, len(data), 8)
-    #         for val in reversed(data.to_numpy()):
-    #             builder.PrependFloat64(val)
-    #         values_vector_offset = builder.EndVector(len(data))
-    #         FloatColumn.Start(builder)
-    #         FloatColumn.AddValues(builder, values_vector_offset)
-    #         data_offset = FloatColumn.End(builder)
-    #     elif data.dtype == 'object':  # Assuming object dtype for strings
-    #         data_type = DataType.String
-    #         strings_offsets = [builder.CreateString(str(value)) for value in data]
-    #         builder.StartVector(4, len(strings_offsets), 4)
-    #         for offset in reversed(strings_offsets):
-    #             builder.PrependUOffsetTRelative(offset)
-    #         values_vector_offset = builder.EndVector(len(strings_offsets))
-    #         StringColumn.Start(builder)
-    #         StringColumn.AddValues(builder, values_vector_offset)
-    #         data_offset = StringColumn.End(builder)
-    #     else:
-    #         continue  # Skip unsupported data types
-
-    #     ColumnMetadata.Start(builder)
-    #     ColumnMetadata.AddName(builder, name_offset)
-    #     ColumnMetadata.AddType(builder, data_type)
-    #     metadata_offset = ColumnMetadata.End(builder)
-
-    #     ColumnDataHolder.Start(builder)
-    #     ColumnDataHolder.AddData(builder, data_offset)
-    #     column_data_holder_offset = ColumnDataHolder.End(builder)
-
-    #     columns_metadata_offsets.append(metadata_offset)
-    #     column_data_offsets.append(column_data_holder_offset)
-
-    # # Create vectors for the metadata and data
-    # Dataframe.StartColumnsVector(builder, len(columns_metadata_offsets))
-    # for offset in reversed(columns_metadata_offsets):
-    #     builder.PrependUOffsetTRelative(offset)
-    # columns_metadata_vector = builder.EndVector(len(columns_metadata_offsets))
-
-    # Dataframe.StartDataVector(builder, len(column_data_offsets))
-    # for offset in reversed(column_data_offsets):
-    #     builder.PrependUOffsetTRelative(offset)
-    # columns_data_vector = builder.EndVector(len(column_data_offsets))
-
-    # # Create the main Dataframe object
-    # Dataframe.Start(builder)
-    # Dataframe.AddColumns(builder, columns_metadata_vector)
-    # Dataframe.AddData(builder, columns_data_vector)
-    # dataframe_offset = Dataframe.End(builder)
-
-    # builder.Finish(dataframe_offset)
-    # return bytes(builder.Output())
-
+    return builder.Output()
     
-
 
 def fb_dataframe_head(fb_bytes: bytes, rows: int = 5) -> pd.DataFrame:
     """
-        Returns the first n rows of the Flatbuffer Dataframe as a Pandas Dataframe
-        similar to df.head(). If there are less than n rows, return the entire Dataframe.
-        Hint: don't forget the column names!
+    Returns the first n rows of the Flatbuffer Dataframe as a Pandas Dataframe
+    similar to df.head(). If there are less than n rows, return the entire Dataframe.
+    Hint: don't forget the column names!
 
-        @param fb_bytes: bytes of the Flatbuffer Dataframe.
-        @param rows: number of rows to return.
+    @param fb_bytes: bytes of the Flatbuffer Dataframe.
+    @param rows: number of rows to return.
     """
-    return pd.DataFrame()  # REPLACE THIS WITH YOUR CODE...
+    root_df = DataFrame.DataFrame.GetRootAsDataFrame(fb_bytes, 0)
+    column_count = root_df.ColumnsLength()
+
+    # get column metadata and reverse order of columns to match the original df
+    column_metadata = [(root_df.Columns(i).Metadata().Name().decode('utf-8'), root_df.Columns(i).Metadata().Dtype(), i)
+                       for i in range(column_count)][::-1]
+
+    # dict to hold colunm data
+    data = {meta[0]: [] for meta in column_metadata}
+
+    # get min rows across all columns to handle columns with diff. lengths
+    rows_available = float('inf')
+    for name, dtype, index in column_metadata:
+        col = root_df.Columns(index)
+        if dtype == ValueType.ValueType.Int:
+            rows_available = min(rows_available, col.IntValuesLength())
+        elif dtype == ValueType.ValueType.Float:
+            rows_available = min(rows_available, col.FloatValuesLength())
+        elif dtype == ValueType.ValueType.String:
+            rows_available = min(rows_available, col.StringValuesLength())
+
+    # get data for each column up to the min of available and requested rows
+    rows_to_fetch = min(rows, rows_available)
+    for row_idx in range(rows_to_fetch):
+        for name, dtype, index in column_metadata:
+            col = root_df.Columns(index)
+            if dtype == ValueType.ValueType.Int:
+                data[name].append(col.IntValues(row_idx))
+            elif dtype == ValueType.ValueType.Float:
+                data[name].append(col.FloatValues(row_idx))
+            elif dtype == ValueType.ValueType.String:
+                data[name].append(col.StringValues(row_idx).decode('utf-8'))
+
+    # make pd df with reversed column order
+    df_result = pd.DataFrame(data, columns=[meta[0] for meta in column_metadata])
+    return df_result
 
 
 def fb_dataframe_group_by_sum(fb_bytes: bytes, grouping_col_name: str, sum_col_name: str) -> pd.DataFrame:
@@ -188,7 +143,26 @@ def fb_dataframe_group_by_sum(fb_bytes: bytes, grouping_col_name: str, sum_col_n
         @param grouping_col_name: column to group by.
         @param sum_col_name: column to sum.
     """
-    return pd.DataFrame()  # REPLACE THIS WITH YOUR CODE...
+
+    df = DataFrame.DataFrame.GetRootAsDataFrame(fb_bytes, 0)
+    data = {}
+
+    for i in range(df.ColumnsLength()):
+        col = df.Columns(i)
+        col_name = col.Metadata().Name().decode('utf-8')
+        if col_name in [grouping_col_name, sum_col_name]:
+            if col.Metadata().Dtype() == ValueType.ValueType().Int:
+                data[col_name] = [col.IntValues(j) for j in range(col.IntValuesLength())]
+            elif col.Metadata().Dtype() == ValueType.ValueType().Float:
+                data[col_name] = [col.FloatValues(j) for j in range(col.FloatValuesLength())]
+            elif col.Metadata().Dtype() == ValueType.ValueType().String:
+                data[col_name] = [col.StringValues(j).decode('utf-8') for j in range(col.StringValuesLength())]
+
+    # make df from dict
+    df = pd.DataFrame(data)
+    result = df.groupby(grouping_col_name).sum()
+
+    return result
 
 
 def fb_dataframe_map_numeric_column(fb_buf: memoryview, col_name: str, map_func: types.FunctionType) -> None:

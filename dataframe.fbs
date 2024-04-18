@@ -1,13 +1,10 @@
 // Define a schema for serializing Dataframes in Flatbuffers.
 
-// union not used as vector of union not possible
+namespace Project.DataFrame;
 
-namespace DataFrame;
-
-enum ValueType: byte {
-  Int,
-  Float,
-  String
+table DataFrame {
+  metadata: string;
+  columns: [Column];
 }
 
 table Metadata {
@@ -22,9 +19,16 @@ table Column {
   string_values: [string];
 }
 
-table DataFrame {
-  metadata: string;
-  columns: [Column];
+enum ValueType: byte {
+  Int,
+  Float,
+  String
+}
+
+enum DataType: byte {
+  Int64 = 0,
+  Float,
+  String
 }
 
 root_type DataFrame;

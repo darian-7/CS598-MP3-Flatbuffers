@@ -80,6 +80,9 @@ def test_fb_dataframe_head_correctness():
     df_deserialized = dill.loads(df_dill_bytestring)
     df_head_dill = df_deserialized.head()
 
+    # print("FB DataFrame:\n", df_head_fb)
+    # print("Dill DataFrame:\n", df_head_dill)
+
     assert df_head_fb.equals(df_head_dill)
 
 
@@ -178,3 +181,8 @@ def test_fb_dataframe_map_numeric_column_efficiency():
 
 # if __name__ == '__main__':
 #     test_to_flatbuffer()
+#     test_fb_dataframe_head_correctness()
+#     test_fb_dataframe_head_efficiency()
+#     test_fb_dataframe_group_by_sum()
+#     # test_fb_dataframe_map_numeric_column_correctness()
+#     # test_fb_dataframe_map_numeric_column_efficiency()
